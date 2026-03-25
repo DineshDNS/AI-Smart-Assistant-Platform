@@ -1,10 +1,6 @@
 from fastapi import FastAPI
+from app.api.input_router import router as input_router
 
-app = FastAPI(
-    title="AI Smart Assistant Platform",
-    version="1.0.0"
-)
+app = FastAPI()
 
-@app.get("/")
-def root():
-    return {"message": "AI Smart Assistant Backend Running"}
+app.include_router(input_router, prefix="/api")
