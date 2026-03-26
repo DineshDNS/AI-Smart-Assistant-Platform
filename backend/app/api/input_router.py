@@ -3,6 +3,7 @@ from typing import Optional
 
 from app.services.input_handler_service import process_input
 from app.services.preprocessing.preprocessing_service import run_preprocessing
+from app.services.normalization.normalization_service import run_normalization  # ✅ NEW
 
 router = APIRouter()
 
@@ -17,7 +18,7 @@ async def handle_input(
 ):
     """
     FINAL PIPELINE:
-    Input Handler → Preprocessing → Response
+    Input Handler → Preprocessing → Normalization → Response
     """
 
     # Step 1: Input Handling
@@ -27,4 +28,9 @@ async def handle_input(
         return input_result
 
     # Step 2: Preprocessing
-    return run_preprocessing(input_result)
+    preprocessed_data = run_preprocessing(input_result)
+
+    # Step 3: Normalization
+    normalized_data = run_normalization(preprocessed_data)
+
+    return normalized_data

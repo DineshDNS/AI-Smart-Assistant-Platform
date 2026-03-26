@@ -1,0 +1,5 @@
+date,amount,gst_amount,category
+2024-01-02,10000,1800,rent
+2024-01-03,5000,900,salary
+2024-01-06,3000,540,utilities
+2024-01-12,8000,1440,marketing
