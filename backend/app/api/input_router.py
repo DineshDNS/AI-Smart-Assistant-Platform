@@ -3,9 +3,13 @@ from typing import Optional
 
 from app.services.input_handler_service import process_input
 from app.services.preprocessing.preprocessing_service import run_preprocessing
-from app.services.normalization.normalization_service import run_normalization  # ✅ NEW
+from app.services.normalization.normalization_service import run_normalization
+
+# ✅ Cache Layer
+from app.services.cache.cache_service import CacheService
 
 router = APIRouter()
+cache_service = CacheService()
 
 
 @router.post("/input")
@@ -17,8 +21,8 @@ async def handle_input(
     image: Optional[UploadFile] = File(None)
 ):
     """
-    FINAL PIPELINE:
-    Input Handler → Preprocessing → Normalization → Response
+    PIPELINE:
+    Input → Preprocessing → Normalization → Cache → Response
     """
 
     # Step 1: Input Handling
@@ -33,4 +37,35 @@ async def handle_input(
     # Step 3: Normalization
     normalized_data = run_normalization(preprocessed_data)
 
-    return normalized_data
+    # ❌ Do not cache failed responses
+    if normalized_data.get("status") == "failed":
+        return normalized_data
+
+    # Step 4: Cache Check
+    cache_result = cache_service.check_cache(
+        normalized_data,
+        user_id=normalized_data.get("user_id")
+    )
+
+    # ✅ CACHE HIT (FIXED RESPONSE STRUCTURE)
+    if cache_result["cache_hit"]:
+        cached_response = cache_result["data"]
+
+        # 🔥 Update request_id for current request
+        cached_response["request_id"] = normalized_data["request_id"]
+
+        # 🔥 Add cache source flag
+        cached_response["source"] = "cache"
+
+        return cached_response
+
+    # CACHE MISS (temporary: return normalized data)
+    final_response = normalized_data
+
+    # Step 5: Store Cache
+    cache_service.store_cache(
+        cache_result["key"],
+        final_response
+    )
+
+    return final_response
