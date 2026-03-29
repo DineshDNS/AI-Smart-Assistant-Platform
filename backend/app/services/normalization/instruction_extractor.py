@@ -1,138 +1,186 @@
-import re
+from difflib import get_close_matches
+
+# =========================
+# ACTION WORDS (REAL-WORLD COVERAGE)
+# =========================
+ACTIONS = [
+    # Core NLP / LLM tasks
+    "summarize", "explain", "analyze", "describe", "define",
+    "translate", "convert", "classify", "extract", "detect",
+
+    # Data / analysis
+    "compare", "evaluate", "predict", "recommend", "generate",
+    "calculate", "compute", "estimate", "measure",
+
+    # File / processing
+    "read", "parse", "process", "review", "scan", "interpret",
+
+    # Transformation
+    "rewrite", "simplify", "improve", "expand", "shorten",
+    "format", "clean", "normalize",
+
+    # Q&A / reasoning
+    "answer", "solve", "clarify", "justify", "elaborate",
+
+    # Vision / image
+    "identify", "recognize", "label", "segment",
+
+    # Audio
+    "transcribe", "listen",
+
+    # General
+    "tell", "show", "give", "list"
+]
 
 
-def extract_instruction(data: dict) -> dict:
+# =========================
+# CONVERSATION WORDS
+# =========================
+CONVERSATION = [
+    # Greetings
+    "hi", "hello", "hey", "hey there",
+    "good morning", "good afternoon", "good evening",
+
+    # Casual talk
+    "how are you", "how are you doing",
+    "what's up", "whats up",
+    "how is it going", "how's it going",
+
+    # Polite starters
+    "can you help me", "could you help me",
+    "i need help", "help me",
+
+    # Small talk
+    "nice to meet you", "glad to meet you",
+    "how have you been",
+
+    # Chat intent
+    "let's chat", "talk to me", "just chatting"
+]
+
+
+# =========================
+# SPLIT SEPARATORS
+# =========================
+SEPARATORS = [":", "-", "->", "=>"]
+
+
+# =========================
+# HELPERS
+# =========================
+def find_action(word):
+    match = get_close_matches(word, ACTIONS, n=1, cutoff=0.75)
+    return match[0] if match else None
+
+
+def contains_action(text):
+    words = text.split()
+    return any(find_action(w) for w in words)
+
+
+def is_conversation(text):
+    return text.strip().lower() in CONVERSATION
+
+
+# =========================
+# MAIN FUNCTION
+# =========================
+def extract_instruction(data: dict):
+
     processed = data.get("processed_data", {})
-
     text_data = processed.get("text")
-    audio_data = processed.get("audio_text")
-    file_data = processed.get("file")
-    image_data = processed.get("image")
+    audio_data = processed.get("audio_text", [])
+    files = processed.get("file", [])
+    images = processed.get("image", [])
 
-    # TEXT PRIORITY
+    # =========================
+    # 1. TEXT PRIORITY
+    # =========================
     if text_data:
-        cleaned_text = text_data.get("cleaned", "")
+        text = text_data.get("original", "").strip().lower()
 
-        instruction_text, extracted_data = split_text(cleaned_text)
+        if text:
 
-        tokens = [
-            t.strip() for t in instruction_text.split()
-            if t and t.strip()
-        ]
+            # 🔹 Conversation
+            if is_conversation(text):
+                return {
+                    "text": "conversation",
+                    "type": "conversation",
+                    "data_part": text,
+                    "source": "text"
+                }
 
-        return {
-            "text": instruction_text.strip(),
-            "tokens": tokens,
-            "_extracted_data": extracted_data
-        }
+            # 🔹 Structured split
+            for sep in SEPARATORS:
+                if sep in text:
+                    left, right = text.split(sep, 1)
+                    return {
+                        "text": left.strip(),
+                        "type": "instruction_data",
+                        "data_part": right.strip(),
+                        "source": "text"
+                    }
 
-    # AUDIO AS INSTRUCTION
+            # 🔹 Action exists → treat as instruction
+            if contains_action(text):
+                return {
+                    "text": text,
+                    "type": "instruction_only",
+                    "data_part": None,
+                    "source": "text"
+                }
+
+            # 🔹 Data only
+            return {
+                "text": "",
+                "type": "data_only",
+                "data_part": text,
+                "source": "text"
+            }
+
+    # =========================
+    # 2. AUDIO SECONDARY
+    # =========================
     if audio_data:
-        instruction_text = audio_data.get("transcribed_text", "").strip()
+        first_audio = audio_data[0].get("transcribed_text", "").strip().lower()
 
-        tokens = [
-            t.strip() for t in instruction_text.split()
-            if t and t.strip()
-        ]
+        if first_audio:
+            if contains_action(first_audio):
+                return {
+                    "text": first_audio,
+                    "type": "instruction_only",
+                    "data_part": None,
+                    "source": "audio"
+                }
 
-        return {
-            "text": instruction_text,
-            "tokens": tokens,
-            "_extracted_data": None
-        }
+    # =========================
+    # 3. DEFAULT BUILDER
+    # =========================
+    instructions = []
 
-    # IMAGE ONLY DEFAULT
-    if image_data and not file_data:
-        return {
-            "text": "describe the image",
-            "tokens": ["describe", "image"],
-            "_extracted_data": None
-        }
+    # Audio default
+    if audio_data:
+        instructions.append("convert audio to text")
 
-    # FILE ONLY DEFAULT
-    if file_data:
-        first_file = file_data[0] if isinstance(file_data, list) else file_data
+    # File default
+    for f in files:
+        name = f.get("file_name", "").lower()
 
-        if first_file.get("category") == "document":
-            return {
-                "text": "summarize the file",
-                "tokens": ["summarize", "file"],
-                "_extracted_data": None
-            }
+        if name.endswith((".csv", ".xlsx")):
+            instructions.append("analyze file")
+        else:
+            instructions.append("summarize file")
 
-        elif first_file.get("category") == "tabular":
-            return {
-                "text": "analyze the data",
-                "tokens": ["analyze", "data"],
-                "_extracted_data": None
-            }
+    # Image default
+    if images:
+        instructions.append("describe image")
+
+    if not instructions:
+        instructions.append("process input")
 
     return {
-        "text": "",
-        "tokens": [],
-        "_extracted_data": None
+        "text": " and ".join(instructions),
+        "type": "default",
+        "data_part": None,
+        "source": "default"
     }
-
-
-def split_text(text: str):
-    text = text.strip()
-
-    # SYMBOL-BASED SPLIT
-    separators = [":", "-", "→", "=>"]
-
-    for sep in separators:
-        if sep in text:
-            parts = text.split(sep, 1)
-            instruction = parts[0]
-            data = parts[1]
-            return instruction.strip(), clean_data_text(data)
-
-    # NLP-CLEANED PATTERN SUPPORT
-    pattern = r"^(summarize|explain|analyze|describe|predict|detect)\s+(follow|following|below|this|given)\s+(.*)"
-
-    match = re.match(pattern, text, re.IGNORECASE)
-
-    if match:
-        instruction = match.group(1)
-        data = match.group(3)
-        return instruction.strip(), clean_data_text(data)
-
-    # NEWLINE SPLIT
-    if "\n" in text:
-        parts = text.split("\n", 1)
-        return parts[0].strip(), clean_data_text(parts[1])
-
-    return text, None
-
-
-def clean_data_text(data: str):
-    """
-    Cleans extracted data:
-    - Keeps only meaningful content
-    - Removes extra instructions
-    - Works even without punctuation
-    """
-
-    data = data.strip()
-
-    # 1. Try sentence split
-    sentences = re.split(r'(?<=[.!?])\s+', data)
-
-    if sentences and len(sentences[0].split()) > 3:
-        data = sentences[0].strip()
-
-    # 2. Stop at instruction verbs
-    stop_words = [
-        "summarize", "explain", "analyze",
-        "describe", "predict", "detect", "verify"
-    ]
-
-    words = data.split()
-
-    cleaned_words = []
-    for word in words:
-        if word.lower() in stop_words and len(cleaned_words) > 3:
-            break
-        cleaned_words.append(word)
-
-    return " ".join(cleaned_words).strip()

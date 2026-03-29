@@ -1,67 +1,97 @@
-def build_data(preprocessed_data: dict, instruction: dict) -> list:
+def build_data(preprocessed_data: dict, instruction: dict):
+
     processed = preprocessed_data.get("processed_data", {})
     data_items = []
 
-    extracted_text_data = instruction.get("_extracted_data")
-
-    # Text data from split
-    if extracted_text_data:
-        cleaned_data = extracted_text_data.strip()
-
-        if cleaned_data:
-            data_items.append({
-                "type": "text",
-                "content": cleaned_data,
-                "metadata": {
-                    "length": len(cleaned_data)
-                }
-            })
-
-    # Audio as data only if text exists
-    audio_data = processed.get("audio_text")
     text_data = processed.get("text")
+    audio_data = processed.get("audio_text", [])
 
-    if audio_data and text_data:
-        content = audio_data.get("transcribed_text", "").strip()
+    # =========================
+    # TEXT
+    # =========================
+    if text_data:
+        original = text_data.get("original", "").strip()
 
-        if content:
-            data_items.append({
-                "type": "audio",
-                "content": content,
-                "metadata": {}
-            })
+        # 🔥 Conversation case
+        if instruction.get("type") == "conversation":
+            if instruction.get("data_part"):
+                data_items.append({
+                    "type": "text",
+                    "content": instruction.get("data_part"),
+                    "metadata": {"source": "conversation"}
+                })
 
-    # File handling
-    files = processed.get("file", [])
-    for f in files:
+        # 🔹 Instruction + Data (structured split)
+        elif instruction.get("type") == "instruction_data":
+            if instruction.get("data_part"):
+                data_items.append({
+                    "type": "text",
+                    "content": instruction.get("data_part"),
+                    "metadata": {"source": "text"}
+                })
+
+        # 🔹 Data only
+        elif instruction.get("type") == "data_only":
+            if original:
+                data_items.append({
+                    "type": "text",
+                    "content": original,
+                    "metadata": {"source": "text"}
+                })
+
+    # =========================
+    # AUDIO (LIST FORMAT)
+    # =========================
+    audio_list = []
+
+    for audio in audio_data:
+        txt = audio.get("transcribed_text", "").strip()
+        if txt:
+            audio_list.append({"text": txt})
+
+    if audio_list:
+        data_items.append({
+            "type": "audio",
+            "content": audio_list,
+            "metadata": {"count": len(audio_list)}
+        })
+
+    # =========================
+    # FILES (DEDUP)
+    # =========================
+    seen = set()
+
+    for f in processed.get("file", []):
+        name = f.get("file_name")
+
+        if not name or name in seen:
+            continue
+        seen.add(name)
+
         if f.get("category") == "document":
             data_items.append({
                 "type": "document",
                 "content": f.get("document_text"),
-                "metadata": {
-                    "file_name": f.get("file_name")
-                }
+                "metadata": {"file_name": name}
             })
 
         elif f.get("category") == "tabular":
             data_items.append({
                 "type": "tabular",
                 "content": f.get("rows"),
-                "metadata": {
-                    "file_name": f.get("file_name")
-                }
+                "metadata": {"file_name": name}
             })
 
-    # Image handling
-    if processed.get("image"):
-        img = processed["image"]
+    # =========================
+    # IMAGE
+    # =========================
+    for img in processed.get("image", []):
         data_items.append({
             "type": "image",
             "content": img.get("file_path"),
             "metadata": {
                 "width": img.get("width"),
                 "height": img.get("height"),
-                "channels": img.get("channels"),
                 "format": img.get("format")
             }
         })

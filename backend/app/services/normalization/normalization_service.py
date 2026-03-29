@@ -6,25 +6,19 @@ from app.services.normalization.validators import validate_preprocessing_output
 
 def run_normalization(preprocessed_data: dict) -> dict:
     try:
-        # ✅ Step 1: Validate input
         validate_preprocessing_output(preprocessed_data)
 
-        # ✅ Step 2: Extract instruction (internal use)
         instruction_raw = extract_instruction(preprocessed_data)
 
-        # ✅ Clean instruction for API response (remove internal fields)
         instruction = {
             "text": instruction_raw.get("text", ""),
-            "tokens": instruction_raw.get("tokens", [])
+            "source": instruction_raw.get("source", "default")
         }
 
-        # ✅ Step 3: Build data (uses internal extracted data)
         data = build_data(preprocessed_data, instruction_raw)
 
-        # ✅ Step 4: Build summary
         summary = build_summary(data)
 
-        # ✅ Final Output
         return {
             "request_id": preprocessed_data.get("request_id"),
             "user_id": preprocessed_data.get("user_id"),

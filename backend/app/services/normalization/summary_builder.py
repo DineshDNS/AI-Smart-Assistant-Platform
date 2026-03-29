@@ -2,6 +2,6 @@ def build_summary(data: list) -> dict:
     types = list(set([item["type"] for item in data]))
 
     return {
-        "total_data_items": len(data),
+        "total_items": len(data),
         "modalities": types
     }
