@@ -14,8 +14,8 @@ cache_service = CacheService()
 async def handle_input(
     text: Optional[str] = Form(None),
     user_id: str = Form(...),
+    session_id: str = Form(...),
 
-    # ✅ FIXED: Proper multiple file upload support
     audio: Optional[List[UploadFile]] = File(None),
     file: Optional[List[UploadFile]] = File(None),
     image: Optional[List[UploadFile]] = File(None),
@@ -25,7 +25,6 @@ async def handle_input(
     Input → Preprocessing → Normalization → Cache → Response
     """
 
-    # ✅ Normalize None → []
     audio = audio or []
     file = file or []
     image = image or []
@@ -33,7 +32,7 @@ async def handle_input(
     # =========================
     # STEP 1: INPUT HANDLING
     # =========================
-    input_result = process_input(text, audio, file, image, user_id)
+    input_result = process_input(text, audio, file, image, user_id, session_id)  # 🔥 UPDATED
 
     if not input_result.get("valid"):
         return input_result
@@ -48,7 +47,6 @@ async def handle_input(
     # =========================
     normalized_data = run_normalization(preprocessed_data)
 
-    # ❌ Do not cache failed responses
     if normalized_data.get("status") == "failed":
         return normalized_data
 
@@ -66,10 +64,7 @@ async def handle_input(
     if cache_result["cache_hit"]:
         cached_response = cache_result["data"]
 
-        # Update request_id for current request
         cached_response["request_id"] = normalized_data["request_id"]
-
-        # Mark response as cache
         cached_response["source"] = "cache"
 
         return cached_response

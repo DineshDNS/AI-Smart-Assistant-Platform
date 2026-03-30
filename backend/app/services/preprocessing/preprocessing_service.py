@@ -40,6 +40,7 @@ def run_preprocessing(input_data: dict):
     return {
         "request_id": input_data["request_id"],
         "user_id": input_data["user_id"],
+        "session_id": input_data["session_id"],
         "status": "processed",
         "processed_data": processed,
         "errors": errors,

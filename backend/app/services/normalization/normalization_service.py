@@ -22,6 +22,7 @@ def run_normalization(preprocessed_data: dict) -> dict:
         return {
             "request_id": preprocessed_data.get("request_id"),
             "user_id": preprocessed_data.get("user_id"),
+            "session_id": preprocessed_data.get("session_id"),
             "status": "normalized",
             "instruction": instruction,
             "data": data,
@@ -34,6 +35,7 @@ def run_normalization(preprocessed_data: dict) -> dict:
         return {
             "request_id": preprocessed_data.get("request_id"),
             "user_id": preprocessed_data.get("user_id"),
+            "session_id": preprocessed_data.get("session_id"),
             "status": "failed",
             "error": str(e)
         }

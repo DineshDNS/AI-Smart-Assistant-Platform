@@ -12,7 +12,7 @@ def _ensure_list(x):
     return x if isinstance(x, list) else [x]
 
 
-def process_input(text, audio, file, image, user_id):
+def process_input(text, audio, file, image, user_id, session_id):
 
     request_id = generate_request_id()
     timestamp = get_timestamp()
@@ -115,6 +115,7 @@ def process_input(text, audio, file, image, user_id):
         "request_id": request_id,
         "timestamp": timestamp,
         "user_id": user_id,
+        "session_id": session_id,
         "status": "success" if valid else "error",
         "valid": valid,
         "input_types": input_types,
