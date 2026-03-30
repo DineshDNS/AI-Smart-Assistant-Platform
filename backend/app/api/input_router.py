@@ -6,8 +6,16 @@ from app.services.preprocessing.preprocessing_service import run_preprocessing
 from app.services.normalization.normalization_service import run_normalization
 from app.services.cache.cache_service import CacheService
 
+# 🔥 NEW IMPORT
+from app.memory.memory_manager import MemoryManager
+
+
 router = APIRouter()
+
 cache_service = CacheService()
+
+# 🔥 Initialize once (important for performance)
+memory_manager = MemoryManager()
 
 
 @router.post("/input")
@@ -22,17 +30,20 @@ async def handle_input(
 ):
     """
     PIPELINE:
-    Input → Preprocessing → Normalization → Cache → Response
+    Input → Preprocessing → Normalization → Cache → Memory → Response
     """
 
+    # Normalize None → []
     audio = audio or []
     file = file or []
     image = image or []
 
     # =========================
-    # STEP 1: INPUT HANDLING
+    # STEP 1: INPUT HANDLER
     # =========================
-    input_result = process_input(text, audio, file, image, user_id, session_id)  # 🔥 UPDATED
+    input_result = process_input(
+        text, audio, file, image, user_id, session_id
+    )
 
     if not input_result.get("valid"):
         return input_result
@@ -64,21 +75,37 @@ async def handle_input(
     if cache_result["cache_hit"]:
         cached_response = cache_result["data"]
 
+        # Update request_id
         cached_response["request_id"] = normalized_data["request_id"]
+
+        # Mark source
         cached_response["source"] = "cache"
 
         return cached_response
 
     # =========================
-    # CACHE MISS
+    # STEP 5: MEMORY LAYER 🔥
     # =========================
-    final_response = normalized_data
+    enriched_data = memory_manager.process(normalized_data)
 
     # =========================
-    # STORE CACHE
+    # (Future) Intelligence Layer
+    # =========================
+    final_response = enriched_data
+
+    # =========================
+    # STEP 6: CACHE STORE
     # =========================
     cache_service.store_cache(
         cache_result["key"],
+        final_response
+    )
+
+    # =========================
+    # STEP 7: MEMORY UPDATE 🔥
+    # =========================
+    memory_manager.update(
+        normalized_data,
         final_response
     )
 
