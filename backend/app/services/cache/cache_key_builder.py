@@ -1,3 +1,4 @@
+
 import hashlib
 import json
 
@@ -34,10 +35,11 @@ def normalize_for_cache(data_items):
                 "shape": content.get("shape")
             }
 
-        # DOCUMENT (OPTIONAL ADD)
+        # DOCUMENT
         elif item["type"] == "document":
+            content = item.get("content", "")
             clean["content"] = {
-                "length": len(item.get("content", ""))
+                "length": len(content)
             }
 
         normalized.append(clean)
@@ -46,20 +48,42 @@ def normalize_for_cache(data_items):
     return sorted(normalized, key=lambda x: json.dumps(x, sort_keys=True))
 
 
-# ✅ REQUIRED FUNCTION (MISSING BEFORE)
-def build_cache_key(normalized_data: dict, user_id: str = None):
+def build_cache_key(
+    normalized_data: dict,
+    intent_data: dict = None,
+    user_id: str = None
+):
     """
-    Build stable cache key
+    Build semantic + stable cache key
     """
 
+    # =========================
+    # 🔹 BASE PAYLOAD
+    # =========================
     key_payload = {
-        "instruction": normalized_data.get("instruction", {}),
-        "data": normalize_for_cache(normalized_data.get("data", []))
+        "modalities": normalized_data.get("summary", {}).get("modalities", []),
+        "data": normalize_for_cache(normalized_data.get("data", [])),
     }
 
+    # =========================
+    # 🔥 USE ACTIONS (MOST IMPORTANT FIX)
+    # =========================
+    if intent_data and intent_data.get("actions"):
+        key_payload["actions"] = [a["name"] for a in intent_data["actions"]]
+    else:
+        # fallback (only if intent not available)
+        key_payload["instruction"] = normalized_data.get("instruction", {}).get("text", "")
+
+    # =========================
+    # 🔹 USER-SPECIFIC CACHE (OPTIONAL)
+    # =========================
     if user_id:
         key_payload["user_id"] = user_id
 
+    # =========================
+    # 🔹 FINAL HASH
+    # =========================
     key_string = json.dumps(key_payload, sort_keys=True)
 
     return "cache:" + hashlib.sha256(key_string.encode()).hexdigest()
+

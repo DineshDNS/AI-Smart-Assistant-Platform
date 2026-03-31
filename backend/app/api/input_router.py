@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, UploadFile, File, Form
 from typing import List, Optional
 
@@ -5,17 +6,17 @@ from app.services.input_handler_service import process_input
 from app.services.preprocessing.preprocessing_service import run_preprocessing
 from app.services.normalization.normalization_service import run_normalization
 from app.services.cache.cache_service import CacheService
+from app.services.cache.cache_key_builder import build_cache_key
 
-# 🔥 NEW IMPORT
 from app.memory.memory_manager import MemoryManager
+from app.intelligence.intent_detection.intent_service import IntentService
 
 
 router = APIRouter()
 
 cache_service = CacheService()
-
-# 🔥 Initialize once (important for performance)
 memory_manager = MemoryManager()
+intent_service = IntentService()
 
 
 @router.post("/input")
@@ -28,12 +29,7 @@ async def handle_input(
     file: Optional[List[UploadFile]] = File(None),
     image: Optional[List[UploadFile]] = File(None),
 ):
-    """
-    PIPELINE:
-    Input → Preprocessing → Normalization → Cache → Memory → Response
-    """
 
-    # Normalize None → []
     audio = audio or []
     file = file or []
     image = image or []
@@ -62,47 +58,72 @@ async def handle_input(
         return normalized_data
 
     # =========================
-    # STEP 4: CACHE CHECK
+    # STEP 4: MEMORY
     # =========================
-    cache_result = cache_service.check_cache(
-        normalized_data,
+    enriched_data = memory_manager.process(normalized_data)
+
+    # =========================
+    # STEP 5: INTENT
+    # =========================
+    intent_output = intent_service.detect_intent(enriched_data)
+
+    # =========================
+    # STEP 6: CACHE KEY (SEMANTIC)
+    # =========================
+    cache_key = build_cache_key(
+        normalized_data=normalized_data,
+        intent_data=intent_output,
         user_id=normalized_data.get("user_id")
     )
+
+    # =========================
+    # STEP 7: CACHE CHECK
+    # =========================
+    cache_result = cache_service.check_cache_by_key(cache_key)
 
     # =========================
     # CACHE HIT
     # =========================
     if cache_result["cache_hit"]:
-        cached_response = cache_result["data"]
+        cached = cache_result["data"]
 
-        # Update request_id
-        cached_response["request_id"] = normalized_data["request_id"]
+        # Update metadata
+        cached["request_id"] = normalized_data["request_id"]
+        cached["user_id"] = normalized_data["user_id"]
+        cached["session_id"] = normalized_data["session_id"]
 
-        # Mark source
-        cached_response["source"] = "cache"
+        # 🔥 FIX: update RAW instruction
+        cached["instruction"]["raw"] = normalized_data["instruction"]["text"]
 
-        return cached_response
+        cached["source"] = "cache"
+        cached["cache"] = {
+            "hit": True,
+            "key": cache_key
+        }
 
-    # =========================
-    # STEP 5: MEMORY LAYER 🔥
-    # =========================
-    enriched_data = memory_manager.process(normalized_data)
-
-    # =========================
-    # (Future) Intelligence Layer
-    # =========================
-    final_response = enriched_data
+        return cached
 
     # =========================
-    # STEP 6: CACHE STORE
+    # STEP 8: FINAL RESPONSE
+    # =========================
+    final_response = intent_output
+
+    final_response["source"] = "system"
+    final_response["cache"] = {
+        "hit": False,
+        "key": cache_key
+    }
+
+    # =========================
+    # STEP 9: STORE CACHE
     # =========================
     cache_service.store_cache(
-        cache_result["key"],
+        cache_key,
         final_response
     )
 
     # =========================
-    # STEP 7: MEMORY UPDATE 🔥
+    # STEP 10: MEMORY UPDATE
     # =========================
     memory_manager.update(
         normalized_data,
@@ -110,3 +131,4 @@ async def handle_input(
     )
 
     return final_response
+
