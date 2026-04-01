@@ -29,7 +29,7 @@ class ActionExtractor:
     # 🔥 MAIN EXTRACTION (ORDER SAFE)
     # =========================
     def extract_actions(self, text: str) -> list:
-        text = normalize_text(text)
+        text = normalize_text(text or "")
 
         actions = []
         seen = set()

@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, UploadFile, File, Form
 from typing import List, Optional
 
@@ -14,6 +13,9 @@ from app.memory.memory_manager import MemoryManager
 from app.intelligence.intent_detection.intent_service import IntentService
 from app.intelligence.task_planner.planner_service import PlannerService
 
+# 🔥 NEW: AGENT CONTROLLER
+from app.agents.agent_controller import AgentController
+
 
 router = APIRouter()
 
@@ -23,6 +25,7 @@ cache_service = CacheService()
 memory_manager = MemoryManager()
 intent_service = IntentService()
 planner_service = PlannerService()
+agent_controller = AgentController()   # ✅ NEW
 
 
 @router.post("/input")
@@ -37,7 +40,7 @@ async def handle_input(
 ):
     """
     PIPELINE:
-    Input → Preprocessing → Normalization → Cache → Memory → Intent → Task Planner → Response
+    Input → Preprocessing → Normalization → Cache → Memory → Intent → Task Planner → Agent Controller → Response
     """
 
     # Normalize None → []
@@ -107,11 +110,22 @@ async def handle_input(
     task_plan = planner_service.plan(intent_output)
 
     # =========================
+    # STEP 8: AGENT CONTROLLER 🔥 NEW
+    # =========================
+    agent_input = {
+        **intent_output,
+        "task_plan": task_plan,
+        "memory": enriched_data.get("memory", {}),
+        "data": intent_output.get("data", []),
+    }
+
+    agent_output = agent_controller.run(agent_input)
+
+    # =========================
     # FINAL RESPONSE BUILD
     # =========================
     final_response = {
-        **intent_output,
-        "task_plan": task_plan,
+        **agent_output,
         "source": "system",
         "cache": {
             "hit": False,
@@ -120,7 +134,7 @@ async def handle_input(
     }
 
     # =========================
-    # STEP 8: CACHE STORE
+    # STEP 9: CACHE STORE
     # =========================
     cache_service.store_cache(
         cache_result["key"],
@@ -128,7 +142,7 @@ async def handle_input(
     )
 
     # =========================
-    # STEP 9: MEMORY UPDATE
+    # STEP 10: MEMORY UPDATE
     # =========================
     memory_manager.update(
         normalized_data,
@@ -136,4 +150,3 @@ async def handle_input(
     )
 
     return final_response
-

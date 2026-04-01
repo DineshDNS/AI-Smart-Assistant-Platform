@@ -1,5 +1,0 @@
-date,amount,gst_amount,source
-2024-01-01,50000,9000,product_sales
-2024-01-05,30000,5400,service_income
-2024-01-10,20000,3600,online_sales
-2024-01-15,45000,8100,wholesale

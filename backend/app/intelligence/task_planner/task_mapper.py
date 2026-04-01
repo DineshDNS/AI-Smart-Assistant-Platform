@@ -1,12 +1,8 @@
-
 from app.intelligence.task_planner.constants import TRANSFORMATION_KEYWORDS
 
 
 class TaskMapper:
 
-    # =========================
-    # 🔥 DETECT OUTPUT TYPE
-    # =========================
     def detect_output_type(self, instruction: str):
         instruction = (instruction or "").lower()
 
@@ -17,16 +13,11 @@ class TaskMapper:
 
         return None
 
-    # =========================
-    # 🔥 CONTEXT DETECTION (ADVANCED)
-    # =========================
     def is_contextual_request(self, instruction: str):
         instruction = (instruction or "").lower()
 
         pronouns = ["it", "this", "that", "these", "those"]
-
         time_refs = ["previous", "last", "latest", "earlier", "recent", "before", "past"]
-
         positional_refs = ["above", "below", "before this", "after that"]
 
         contextual_phrases = [
@@ -35,31 +26,15 @@ class TaskMapper:
             "the output", "that output", "this output",
             "previous output", "generated output",
             "what you generated", "what you created",
-            "what you gave", "given output", "given result",
-            "earlier output", "earlier result",
-            "recent output", "recent result",
-            "latest output", "latest result",
-            "the summary", "that summary", "this summary",
-            "previous summary",
-            "the report", "that report", "this report",
-            "generated report"
+            "earlier output", "recent output"
         ]
 
-        for phrase in contextual_phrases:
-            if phrase in instruction:
-                return True
+        if any(p in instruction for p in contextual_phrases):
+            return True
 
         words = instruction.split()
+        return any(w in (pronouns + time_refs + positional_refs) for w in words)
 
-        for word in words:
-            if word in (pronouns + time_refs + positional_refs):
-                return True
-
-        return False
-
-    # =========================
-    # 🔥 DERIVED CONTEXT
-    # =========================
     def is_derived_context(self, instruction: str):
         instruction = (instruction or "").lower()
 
@@ -70,9 +45,6 @@ class TaskMapper:
 
         return any(k in instruction for k in derived_keywords)
 
-    # =========================
-    # 🔥 MEMORY OUTPUT TYPE
-    # =========================
     def get_memory_output_type(self, memory: dict):
         short_term = memory.get("short_term", [])
 
@@ -93,7 +65,7 @@ class TaskMapper:
         return "text"
 
     # =========================
-    # 🔥 MAIN MAPPER
+    # 🔥 MAIN MAPPER (FIXED)
     # =========================
     def map_tasks(self, actions, data, instruction, memory=None):
 
@@ -104,7 +76,6 @@ class TaskMapper:
         output_type = self.detect_output_type(instruction)
 
         action_to_task = {}
-
         input_type = data[0]["type"] if data else "text"
 
         is_context = self.is_contextual_request(instruction)
@@ -116,7 +87,24 @@ class TaskMapper:
             action = action_obj.get("name")
 
             # =========================
-            # 🔴 CONVERT (SMART + CONTEXT)
+            # 🟢 CONVERSATION (NEW)
+            # =========================
+            if action == "conversation":
+                tasks.append({
+                    "task_id": f"task_{task_id}",
+                    "action": "conversation",
+                    "input": {
+                        "type": "text",
+                        "source": "input"
+                    },
+                    "output": {"type": "text"},
+                    "status": "pending"
+                })
+                task_id += 1
+                continue
+
+            # =========================
+            # 🔴 CONVERT
             # =========================
             if action == "convert":
 
@@ -129,8 +117,7 @@ class TaskMapper:
                         or action_to_task.get("translate")
                         or action_to_task.get("summarize")
                     )
-
-                    input_type_final = "document" if "generate" in action_to_task else "text"
+                    input_type_final = "text"
 
                 tasks.append({
                     "task_id": f"task_{task_id}",
@@ -146,41 +133,6 @@ class TaskMapper:
                     "depends_on": source if source not in ["memory", None] else None
                 })
 
-                task_id += 1
-                continue
-
-            # =========================
-            # 🟣 DESCRIBE
-            # =========================
-            if action == "describe":
-                tasks.append({
-                    "task_id": f"task_{task_id}",
-                    "action": "describe",
-                    "input": {
-                        "type": input_type,
-                        "source": "input"
-                    },
-                    "output": {"type": "text"},
-                    "status": "pending"
-                })
-                task_id += 1
-                continue
-
-            # =========================
-            # 🔵 EXTRACT
-            # =========================
-            if action == "extract":
-                tasks.append({
-                    "task_id": f"task_{task_id}",
-                    "action": "extract",
-                    "input": {
-                        "type": input_type,
-                        "source": "input"
-                    },
-                    "output": {"type": "text"},
-                    "status": "pending"
-                })
-                action_to_task["extract"] = f"task_{task_id}"
                 task_id += 1
                 continue
 
@@ -207,16 +159,21 @@ class TaskMapper:
                 continue
 
             # =========================
-            # 🟢 EXPLAIN
+            # 🟢 EXPLAIN (🔥 FIXED)
             # =========================
             if action == "explain":
                 source = action_to_task.get("summarize")
+
+                if source:
+                    input_type_final = "summary"
+                else:
+                    input_type_final = "text"   # 🔥 FIX
 
                 tasks.append({
                     "task_id": f"task_{task_id}",
                     "action": "explain",
                     "input": {
-                        "type": "summary",
+                        "type": input_type_final,
                         "source": source or "input"
                     },
                     "output": {"type": "text"},
@@ -228,7 +185,7 @@ class TaskMapper:
                 continue
 
             # =========================
-            # 🔹 DEFAULT SAFE
+            # 🔹 DEFAULT
             # =========================
             tasks.append({
                 "task_id": f"task_{task_id}",
@@ -244,4 +201,3 @@ class TaskMapper:
             task_id += 1
 
         return tasks
-
