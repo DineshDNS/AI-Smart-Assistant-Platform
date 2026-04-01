@@ -16,14 +16,12 @@ class PlannerService:
         actions = intent_output.get("actions", [])
         data = intent_output.get("data", [])
         instruction = intent_output.get("instruction", {}).get("raw", "")
+        memory = intent_output.get("memory", {})  # 🔥 PASS MEMORY
 
-        # STEP 1: map tasks
-        tasks = self.mapper.map_tasks(actions, data, instruction)
+        tasks = self.mapper.map_tasks(actions, data, instruction, memory)
 
-        # STEP 2: resolve dependencies
         tasks, execution_type = self.resolver.resolve(tasks)
 
-        # STEP 3: build execution plan
         plan = self.executor.build(tasks, execution_type)
 
         return plan

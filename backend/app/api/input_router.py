@@ -6,17 +6,23 @@ from app.services.input_handler_service import process_input
 from app.services.preprocessing.preprocessing_service import run_preprocessing
 from app.services.normalization.normalization_service import run_normalization
 from app.services.cache.cache_service import CacheService
-from app.services.cache.cache_key_builder import build_cache_key
 
+# 🔥 MEMORY
 from app.memory.memory_manager import MemoryManager
+
+# 🔥 INTELLIGENCE LAYERS
 from app.intelligence.intent_detection.intent_service import IntentService
+from app.intelligence.task_planner.planner_service import PlannerService
 
 
 router = APIRouter()
 
 cache_service = CacheService()
+
+# 🔥 Initialize once (performance optimized)
 memory_manager = MemoryManager()
 intent_service = IntentService()
+planner_service = PlannerService()
 
 
 @router.post("/input")
@@ -29,7 +35,12 @@ async def handle_input(
     file: Optional[List[UploadFile]] = File(None),
     image: Optional[List[UploadFile]] = File(None),
 ):
+    """
+    PIPELINE:
+    Input → Preprocessing → Normalization → Cache → Memory → Intent → Task Planner → Response
+    """
 
+    # Normalize None → []
     audio = audio or []
     file = file or []
     image = image or []
@@ -58,72 +69,66 @@ async def handle_input(
         return normalized_data
 
     # =========================
-    # STEP 4: MEMORY
+    # STEP 4: CACHE CHECK
     # =========================
-    enriched_data = memory_manager.process(normalized_data)
-
-    # =========================
-    # STEP 5: INTENT
-    # =========================
-    intent_output = intent_service.detect_intent(enriched_data)
-
-    # =========================
-    # STEP 6: CACHE KEY (SEMANTIC)
-    # =========================
-    cache_key = build_cache_key(
-        normalized_data=normalized_data,
-        intent_data=intent_output,
+    cache_result = cache_service.check_cache(
+        normalized_data,
         user_id=normalized_data.get("user_id")
     )
-
-    # =========================
-    # STEP 7: CACHE CHECK
-    # =========================
-    cache_result = cache_service.check_cache_by_key(cache_key)
 
     # =========================
     # CACHE HIT
     # =========================
     if cache_result["cache_hit"]:
-        cached = cache_result["data"]
+        cached_response = cache_result["data"]
 
-        # Update metadata
-        cached["request_id"] = normalized_data["request_id"]
-        cached["user_id"] = normalized_data["user_id"]
-        cached["session_id"] = normalized_data["session_id"]
-
-        # 🔥 FIX: update RAW instruction
-        cached["instruction"]["raw"] = normalized_data["instruction"]["text"]
-
-        cached["source"] = "cache"
-        cached["cache"] = {
+        cached_response["request_id"] = normalized_data["request_id"]
+        cached_response["source"] = "cache"
+        cached_response["cache"] = {
             "hit": True,
-            "key": cache_key
+            "key": cache_result["key"]
         }
 
-        return cached
+        return cached_response
 
     # =========================
-    # STEP 8: FINAL RESPONSE
+    # STEP 5: MEMORY LAYER
     # =========================
-    final_response = intent_output
+    enriched_data = memory_manager.process(normalized_data)
 
-    final_response["source"] = "system"
-    final_response["cache"] = {
-        "hit": False,
-        "key": cache_key
+    # =========================
+    # STEP 6: INTENT DETECTION
+    # =========================
+    intent_output = intent_service.detect_intent(enriched_data)
+
+    # =========================
+    # STEP 7: TASK PLANNING
+    # =========================
+    task_plan = planner_service.plan(intent_output)
+
+    # =========================
+    # FINAL RESPONSE BUILD
+    # =========================
+    final_response = {
+        **intent_output,
+        "task_plan": task_plan,
+        "source": "system",
+        "cache": {
+            "hit": False,
+            "key": cache_result["key"]
+        }
     }
 
     # =========================
-    # STEP 9: STORE CACHE
+    # STEP 8: CACHE STORE
     # =========================
     cache_service.store_cache(
-        cache_key,
+        cache_result["key"],
         final_response
     )
 
     # =========================
-    # STEP 10: MEMORY UPDATE
+    # STEP 9: MEMORY UPDATE
     # =========================
     memory_manager.update(
         normalized_data,

@@ -1,4 +1,3 @@
-
 class ExecutionPlanner:
 
     def build(self, tasks, execution_type):

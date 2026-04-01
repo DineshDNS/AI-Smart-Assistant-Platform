@@ -12,7 +12,7 @@ class IntentService:
         self.classifier = IntentClassifier()
 
     # =========================
-    # 🔥 WEAK INPUT DETECTION
+    # 🔥 MEANINGLESS INPUT DETECTION
     # =========================
     def is_meaningless_input(self, text: str):
         if not text:
@@ -30,7 +30,6 @@ class IntentService:
         if text in weak_words:
             return True
 
-        # very short meaningless
         if len(text.split()) <= 1:
             return True
 
@@ -58,22 +57,59 @@ class IntentService:
         return inferred
 
     # =========================
-    # 🔥 MAIN FUNCTION
+    # 🔥 MAIN INTENT FUNCTION
     # =========================
     def detect_intent(self, payload: dict):
 
         instruction = payload.get("instruction", {})
-        instruction_text = instruction.get("text", "")
+        instruction_text = instruction.get("text", "") or ""
 
         request_id = payload.get("request_id")
         user_id = payload.get("user_id")
         session_id = payload.get("session_id")
 
+        memory = payload.get("memory", {})
+        short_term = memory.get("short_term", [])
+
         # =========================
-        # 🔥 HANDLE MEANINGLESS INPUT
+        # 🔥 HANDLE MEANINGLESS INPUT (SMART)
         # =========================
         if self.is_meaningless_input(instruction_text):
 
+            # ✅ MEMORY-BASED RESPONSE
+            if short_term:
+                last_instruction = short_term[-1].get("instruction")
+
+                return {
+                    "status": "intent_detected",
+
+                    "request_id": request_id,
+                    "user_id": user_id,
+                    "session_id": session_id,
+
+                    "intent": {
+                        "type": "conversation",
+                        "complexity": "single",
+                        "confidence": 1.0,
+                        "source": "memory"
+                    },
+
+                    "actions": [],
+
+                    "instruction": {
+                        "text": [],
+                        "raw": instruction_text,
+                        "source": "conversation"
+                    },
+
+                    "data": payload.get("data"),
+                    "summary": payload.get("summary"),
+                    "memory": memory,
+
+                    "response_hint": f"Do you want me to continue: '{last_instruction}'?"
+                }
+
+            # ❌ NO MEMORY → DEFAULT RESPONSE
             return {
                 "status": "intent_detected",
 
@@ -98,9 +134,8 @@ class IntentService:
 
                 "data": payload.get("data"),
                 "summary": payload.get("summary"),
-                "memory": payload.get("memory"),
+                "memory": memory,
 
-                # 🔥 DEFAULT RESPONSE
                 "response_hint": "Please provide a clear instruction so I can help you."
             }
 
@@ -159,6 +194,6 @@ class IntentService:
 
             "data": payload.get("data"),
             "summary": payload.get("summary"),
-            "memory": payload.get("memory")
+            "memory": memory
         }
 
