@@ -1,163 +1,81 @@
 from app.intelligence.intent_detection.action_extractor import ActionExtractor
-from app.intelligence.intent_detection.model_engine import ModelEngine
-from app.intelligence.intent_detection.intent_classifier import IntentClassifier
 
 
 class IntentService:
 
     def __init__(self):
         self.extractor = ActionExtractor()
-        self.model_engine = ModelEngine()
-        self.classifier = IntentClassifier()
+
+    def normalize_text(self, text: str) -> str:
+        return (text or "").lower().strip()
 
     # =========================
-    # 🔥 GREETING DETECTION (ROBUST)
+    # 🔥 GREETING DETECTION
     # =========================
     def is_greeting(self, text: str) -> bool:
-        text = (text or "").lower().strip()
-
-        BASE_GREETINGS = [
-            "hi", "hello", "hey", "yo", "sup",
-            "good morning", "good afternoon", "good evening",
-            "how are you", "how's it going", "whats up",
-            "what's up", "bye", "goodbye", "see you", "talk to you later",
-            "take care", "nice talking to you"
-        ]
-
-        # ✅ phrase match anywhere
-        if any(greet in text for greet in BASE_GREETINGS):
-            return True
-
-        # ✅ short informal patterns
-        if len(text.split()) <= 3:
-            informal_patterns = ["hi", "hey", "hello"]
-            if any(p in text for p in informal_patterns):
-                return True
-
-        return False
+        greetings = ["hi", "hello", "hey", "how are you", "what's up"]
+        return any(g in text for g in greetings)
 
     # =========================
-    # 🔥 QUESTION → EXPLAIN
-    # =========================
-    def detect_question_intent(self, text: str):
-        text = (text or "").lower().strip()
-
-        question_keywords = ["what", "why", "how", "when", "where", "who", "which"]
-
-        explain_phrases = [
-            "explain", "tell me", "describe",
-            "help me understand", "i want to understand",
-            "can you explain", "could you explain"
-        ]
-
-        for phrase in explain_phrases:
-            if phrase in text:
-                return "explain"
-
-        for word in question_keywords:
-            if word in text:
-                return "explain"
-
-        return None
-
-    # =========================
-    # 🔥 MAIN INTENT DETECTION
+    # 🔥 MAIN INTENT
     # =========================
     def detect_intent(self, payload: dict):
 
         instruction = payload.get("instruction", {})
-        instruction_text = instruction.get("text", "")
+        instruction_text = instruction.get("raw", "")
 
-        if isinstance(instruction_text, list):
-            instruction_text = " ".join(instruction_text)
+        data = payload.get("data", [])
 
-        instruction_text = instruction_text or ""
-
-        request_id = payload.get("request_id")
-        user_id = payload.get("user_id")
-        session_id = payload.get("session_id")
-        memory = payload.get("memory", {})
+        instruction_text = self.normalize_text(instruction_text)
 
         # =========================
-        # 🟢 GREETING → CONVERSATION
+        # 🔥 IMAGE ONLY → DESCRIBE
         # =========================
-        if self.is_greeting(instruction_text):
-            return {
-                "status": "intent_detected",
-                "request_id": request_id,
-                "user_id": user_id,
-                "session_id": session_id,
-                "intent": {
-                    "type": "conversation",
-                    "complexity": "single",
-                    "confidence": 0.95,
-                    "source": "rule"
-                },
-                "actions": [{"name": "conversation"}],
-                "instruction": {
-                    "text": ["conversation"],
-                    "raw": instruction_text,
-                    "source": "conversation"
-                },
-                "data": payload.get("data"),
-                "summary": payload.get("summary"),
-                "memory": memory
-            }
+        has_image = any(
+            d.get("metadata", {}).get("source") == "image"
+            for d in data
+        )
+
+        if not instruction_text and has_image:
+            actions = ["describe"]
 
         # =========================
-        # 🔵 QUESTION → EXPLAIN
+        # 🔥 GREETING
         # =========================
-        question_action = self.detect_question_intent(instruction_text)
-
-        if question_action:
-            return {
-                "status": "intent_detected",
-                "request_id": request_id,
-                "user_id": user_id,
-                "session_id": session_id,
-                "intent": {
-                    "type": "task",
-                    "complexity": "single",
-                    "confidence": 0.95,
-                    "source": "question_rule"
-                },
-                "actions": [{"name": question_action}],
-                "instruction": {
-                    "text": [question_action],
-                    "raw": instruction_text,
-                    "source": "question"
-                },
-                "data": payload.get("data"),
-                "summary": payload.get("summary"),
-                "memory": memory
-            }
+        elif self.is_greeting(instruction_text):
+            actions = ["conversation"]
 
         # =========================
-        # 🟡 ACTION EXTRACTION
+        # 🔥 QUESTION
         # =========================
-        actions = self.extractor.extract_actions(instruction_text)
+        elif instruction_text.startswith(("what", "why", "how")):
+            actions = ["explain"]
 
-        intent_type = self.classifier.classify(actions, False)
-        complexity = "single" if len(actions) <= 1 else "multi"
+        # =========================
+        # 🔥 ACTION EXTRACTION
+        # =========================
+        else:
+            actions = self.extractor.extract_actions(instruction_text)
 
+            # 🔥 FIX: fallback → conversation (NOT explain)
+            if not actions:
+                actions = ["conversation"]
+
+        # =========================
+        # FINAL OUTPUT
+        # =========================
         return {
-            "status": "intent_detected",
-            "request_id": request_id,
-            "user_id": user_id,
-            "session_id": session_id,
+            **payload,
             "intent": {
-                "type": intent_type,
-                "complexity": complexity,
+                "type": "conversation" if actions[0] == "conversation" else "task",
+                "complexity": "single",
                 "confidence": 0.95,
                 "source": "rule"
             },
-            "actions": [{"name": a} for a in actions],
+            "actions": [{"name": actions[0]}],
             "instruction": {
-                "text": actions if actions else [],
+                "text": [actions[0]],
                 "raw": instruction_text,
                 "source": instruction.get("source")
-            },
-            "data": payload.get("data"),
-            "summary": payload.get("summary"),
-            "memory": memory
+            }
         }

@@ -1,99 +1,47 @@
+def safe_extract_content(content):
+
+    if isinstance(content, dict):
+        return (
+            content.get("original")
+            or content.get("cleaned")
+            or content.get("normalized_text")
+            or str(content)
+        )
+
+    if isinstance(content, list):
+        return " ".join(
+            str(x.get("text", x)) if isinstance(x, dict) else str(x)
+            for x in content
+        )
+
+    return str(content)
+
+
 def build_data(preprocessed_data: dict, instruction: dict):
 
     processed = preprocessed_data.get("processed_data", {})
+    raw_items = processed.get("data", [])
+
     data_items = []
 
-    text_data = processed.get("text")
-    audio_data = processed.get("audio_text", [])
-
-    # =========================
-    # TEXT
-    # =========================
-    if text_data:
-        original = text_data.get("original", "").strip()
-
-        # 🔥 Conversation case
-        if instruction.get("type") == "conversation":
-            if instruction.get("data_part"):
-                data_items.append({
-                    "type": "text",
-                    "content": instruction.get("data_part"),
-                    "metadata": {"source": "conversation"}
-                })
-
-        # 🔹 Instruction + Data (structured split)
-        elif instruction.get("type") == "instruction_data":
-            if instruction.get("data_part"):
-                data_items.append({
-                    "type": "text",
-                    "content": instruction.get("data_part"),
-                    "metadata": {"source": "text"}
-                })
-
-        # 🔹 Data only
-        elif instruction.get("type") == "data_only":
-            if original:
-                data_items.append({
-                    "type": "text",
-                    "content": original,
-                    "metadata": {"source": "text"}
-                })
-
-    # =========================
-    # AUDIO (LIST FORMAT)
-    # =========================
-    audio_list = []
-
-    for audio in audio_data:
-        txt = audio.get("transcribed_text", "").strip()
-        if txt:
-            audio_list.append({"text": txt})
-
-    if audio_list:
-        data_items.append({
-            "type": "audio",
-            "content": audio_list,
-            "metadata": {"count": len(audio_list)}
-        })
-
-    # =========================
-    # FILES (DEDUP)
-    # =========================
-    seen = set()
-
-    for f in processed.get("file", []):
-        name = f.get("file_name")
-
-        if not name or name in seen:
+    for item in raw_items:
+        if not item:
             continue
-        seen.add(name)
 
-        if f.get("category") == "document":
-            data_items.append({
-                "type": "document",
-                "content": f.get("document_text"),
-                "metadata": {"file_name": name}
-            })
+        raw_content = item.get("content", "")
+        metadata = item.get("metadata", {})
+        source = metadata.get("source", "unknown")
 
-        elif f.get("category") == "tabular":
-            data_items.append({
-                "type": "tabular",
-                "content": f.get("rows"),
-                "metadata": {"file_name": name}
-            })
+        content = safe_extract_content(raw_content).strip()
 
-    # =========================
-    # IMAGE
-    # =========================
-    for img in processed.get("image", []):
+        if not content and not metadata.get("error"):
+            continue
+
+        # 🔥 EVERYTHING IS TEXT NOW (including image/audio)
         data_items.append({
-            "type": "image",
-            "content": img.get("file_path"),
-            "metadata": {
-                "width": img.get("width"),
-                "height": img.get("height"),
-                "format": img.get("format")
-            }
+            "type": "text",
+            "content": content,
+            "metadata": metadata
         })
 
     return data_items

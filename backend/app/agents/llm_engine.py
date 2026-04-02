@@ -14,5 +14,8 @@ class OllamaLLM:
             "stream": False
         }
 
-        response = requests.post(self.url, json=payload)
-        return response.json().get("response", "")
+        try:
+            response = requests.post(self.url, json=payload)
+            return response.json().get("response", "")
+        except Exception as e:
+            return f"LLM Error: {str(e)}"

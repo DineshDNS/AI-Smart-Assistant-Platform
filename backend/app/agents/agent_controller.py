@@ -7,14 +7,42 @@ from app.agents.constants import LLM_CONFIG, DEFAULT_STRATEGY
 
 class AgentController:
 
+    def is_relevant_memory(self, context: str, instruction: str) -> bool:
+        if not context or not instruction:
+            return False
+        return any(word in context.lower() for word in instruction.lower().split())
+
+    def has_audio_input(self, data: list) -> bool:
+        return any(item.get("metadata", {}).get("source") == "audio" for item in data)
+
     def run(self, payload: dict) -> dict:
 
         task_plan = payload.get("task_plan", {})
         tasks = task_plan.get("tasks", [])
         execution_strategy = task_plan.get("execution", DEFAULT_STRATEGY)
 
+        data = payload.get("data", [])
+        instruction_text = payload.get("instruction", {}).get("raw", "")
+
         # =========================
-        # EDGE CASE: NO TASKS
+        # 🔥 DIRECT OUTPUT (AUDIO → TEXT)
+        # =========================
+        if self.has_audio_input(data) and ("to text" in instruction_text.lower() or "convert" in instruction_text.lower()):
+            for item in data:
+                if item.get("metadata", {}).get("source") == "audio":
+                    return {
+                        **payload,
+                        "status": "completed",
+                        "final_output": item.get("content"),
+                        "agent_plan": {
+                            "execution_steps": [],
+                            "execution_strategy": "none",
+                            "llm_config": LLM_CONFIG
+                        }
+                    }
+
+        # =========================
+        # NO TASKS
         # =========================
         if not tasks:
             payload["agent_plan"] = {
@@ -26,31 +54,31 @@ class AgentController:
             return payload
 
         # =========================
-        # STEP 1: REASONING
+        # 🔥 MEMORY CONTROL
+        # =========================
+        memory = payload.get("memory", {})
+        context = memory.get("context", "")
+
+        if self.has_audio_input(data):
+            memory["context"] = instruction_text
+        elif not self.is_relevant_memory(context, instruction_text):
+            memory["context"] = instruction_text
+        elif not context:
+            memory["context"] = instruction_text
+
+        # =========================
+        # BUILD EXECUTION
         # =========================
         tasks = process_tasks(tasks)
 
-        # =========================
-        # 🔥 SAFE MEMORY CONTEXT
-        # =========================
-        memory = payload.get("memory", {})
-        if not memory.get("context"):
-            memory["context"] = payload.get("instruction", {}).get("raw", "")
-
-        # =========================
-        # STEP 2: EXECUTION STEPS
-        # =========================
         steps = build_execution_steps(
             tasks=tasks,
             select_tool=select_tool,
             build_prompt=build_prompt,
-            data=payload.get("data", []),
+            data=data,
             memory=memory
         )
 
-        # =========================
-        # STEP 3: FINAL PLAN
-        # =========================
         payload["agent_plan"] = {
             "execution_steps": steps,
             "execution_strategy": execution_strategy,

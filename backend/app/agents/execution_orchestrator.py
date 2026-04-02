@@ -15,6 +15,7 @@ def build_execution_steps(tasks, select_tool, build_prompt, data, memory):
 
         input_type = input_info.get("type", "text")
 
+        # 🔥 FIX: summary fallback
         if input_type == "summary" and not data:
             input_type = "text"
 

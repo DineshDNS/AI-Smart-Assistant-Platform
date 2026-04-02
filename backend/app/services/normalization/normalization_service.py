@@ -12,11 +12,12 @@ def run_normalization(preprocessed_data: dict) -> dict:
 
         instruction = {
             "text": instruction_raw.get("text", ""),
-            "source": instruction_raw.get("source", "default")
+            "raw": instruction_raw.get("raw_text") or instruction_raw.get("text", ""),  # 🔥 FIX
+            "source": instruction_raw.get("source", "default"),
+            "type": instruction_raw.get("type", "default")
         }
 
         data = build_data(preprocessed_data, instruction_raw)
-
         summary = build_summary(data)
 
         return {

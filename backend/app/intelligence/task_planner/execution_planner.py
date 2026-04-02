@@ -10,4 +10,3 @@ class ExecutionPlanner:
                 "total_tasks": len(tasks)
             }
         }
-

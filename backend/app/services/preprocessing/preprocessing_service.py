@@ -6,34 +6,57 @@ from app.services.preprocessing.image_processor import process_image
 
 def run_preprocessing(input_data: dict):
 
-    processed = {}
+    processed = {"data": []}
     errors = []
-
     data = input_data["data"]
 
+    # =========================
     # TEXT
+    # =========================
     if data.get("text"):
-        processed["text"] = process_text(data["text"])
+        try:
+            text_result = process_text(data["text"])
 
-    # AUDIO (MULTI)
+            processed["data"].append({
+                "type": "text",
+                "content": text_result,
+                "metadata": {"source": "text"}
+            })
+        except Exception as e:
+            errors.append({"text": str(e)})
+
+    # =========================
+    # AUDIO
+    # =========================
     if data.get("audio"):
-        processed["audio_text"] = []
         for a in data["audio"]:
             try:
-                processed["audio_text"].append(process_audio(a))
+                result = process_audio(a)
+                processed["data"].append(result)
             except Exception as e:
                 errors.append({"audio": str(e)})
 
+    # =========================
     # FILE
+    # =========================
     if data.get("file"):
-        processed["file"] = process_files(data["file"])
+        try:
+            file_results = process_files(data["file"])
+            if isinstance(file_results, list):
+                processed["data"].extend(file_results)
+            else:
+                processed["data"].append(file_results)
+        except Exception as e:
+            errors.append({"file": str(e)})
 
-    # IMAGE (MULTI)
+    # =========================
+    # IMAGE (🔥 FIXED)
+    # =========================
     if data.get("image"):
-        processed["image"] = []
         for img in data["image"]:
             try:
-                processed["image"].append(process_image(img))
+                result = process_image(img)
+                processed["data"].append(result)   # already TEXT
             except Exception as e:
                 errors.append({"image": str(e)})
 

@@ -13,6 +13,23 @@ class TaskMapper:
 
         return None
 
+    def detect_conversion_direction(self, instruction: str):
+        instruction = (instruction or "").lower()
+
+        if "audio to text" in instruction or "speech to text" in instruction:
+            return "audio", "text"
+
+        if "text to audio" in instruction or "text to speech" in instruction:
+            return "text", "audio"
+
+        if "to audio" in instruction:
+            return "text", "audio"
+
+        if "to text" in instruction:
+            return "audio", "text"
+
+        return None, None
+
     def is_contextual_request(self, instruction: str):
         instruction = (instruction or "").lower()
 
@@ -65,9 +82,9 @@ class TaskMapper:
         return "text"
 
     # =========================
-    # 🔥 MAIN MAPPER (FIXED)
+    # 🔥 MAIN MAPPER (FINAL)
     # =========================
-    def map_tasks(self, actions, data, instruction, memory=None):
+    def map_tasks(self, actions, data, instruction, memory=None, completed_steps=None):
 
         tasks = []
         task_id = 1
@@ -83,20 +100,28 @@ class TaskMapper:
 
         memory_input_type = self.get_memory_output_type(memory or {})
 
+        completed_steps = completed_steps or set()
+
         for action_obj in actions:
             action = action_obj.get("name")
 
             # =========================
-            # 🟢 CONVERSATION (NEW)
+            # 🔥 SKIP DUPLICATES
+            # =========================
+            if action == "transcribe" and "transcribe" in completed_steps:
+                continue
+
+            if action in ["clean", "normalize"] and "clean" in completed_steps:
+                continue
+
+            # =========================
+            # 🟢 CONVERSATION
             # =========================
             if action == "conversation":
                 tasks.append({
                     "task_id": f"task_{task_id}",
                     "action": "conversation",
-                    "input": {
-                        "type": "text",
-                        "source": "input"
-                    },
+                    "input": {"type": "text", "source": "input"},
                     "output": {"type": "text"},
                     "status": "pending"
                 })
@@ -104,9 +129,19 @@ class TaskMapper:
                 continue
 
             # =========================
-            # 🔴 CONVERT
+            # 🔴 CONVERT (FINAL FIX)
             # =========================
             if action == "convert":
+
+                input_detected, output_detected = self.detect_conversion_direction(instruction)
+
+                # 🔥 SKIP AUDIO → TEXT (already transcribed)
+                if (
+                    input_detected == "audio"
+                    and output_detected == "text"
+                    and "transcribe" in completed_steps
+                ):
+                    continue
 
                 if (is_context or is_derived) and memory_input_type:
                     source = "memory"
@@ -117,7 +152,9 @@ class TaskMapper:
                         or action_to_task.get("translate")
                         or action_to_task.get("summarize")
                     )
-                    input_type_final = "text"
+                    input_type_final = input_detected or input_type
+
+                output_type_final = output_detected or output_type or "audio"
 
                 tasks.append({
                     "task_id": f"task_{task_id}",
@@ -127,7 +164,7 @@ class TaskMapper:
                         "source": source or "input"
                     },
                     "output": {
-                        "type": output_type or "audio"
+                        "type": output_type_final
                     },
                     "status": "pending",
                     "depends_on": source if source not in ["memory", None] else None
@@ -137,55 +174,7 @@ class TaskMapper:
                 continue
 
             # =========================
-            # 🟡 SUMMARIZE
-            # =========================
-            if action == "summarize":
-                source = action_to_task.get("extract")
-
-                tasks.append({
-                    "task_id": f"task_{task_id}",
-                    "action": "summarize",
-                    "input": {
-                        "type": "text",
-                        "source": source or "input"
-                    },
-                    "output": {"type": "summary"},
-                    "status": "pending",
-                    "depends_on": source
-                })
-
-                action_to_task["summarize"] = f"task_{task_id}"
-                task_id += 1
-                continue
-
-            # =========================
-            # 🟢 EXPLAIN (🔥 FIXED)
-            # =========================
-            if action == "explain":
-                source = action_to_task.get("summarize")
-
-                if source:
-                    input_type_final = "summary"
-                else:
-                    input_type_final = "text"   # 🔥 FIX
-
-                tasks.append({
-                    "task_id": f"task_{task_id}",
-                    "action": "explain",
-                    "input": {
-                        "type": input_type_final,
-                        "source": source or "input"
-                    },
-                    "output": {"type": "text"},
-                    "status": "pending",
-                    "depends_on": source
-                })
-
-                task_id += 1
-                continue
-
-            # =========================
-            # 🔹 DEFAULT
+            # 🟡 DEFAULT
             # =========================
             tasks.append({
                 "task_id": f"task_{task_id}",
