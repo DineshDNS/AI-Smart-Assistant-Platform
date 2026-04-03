@@ -37,7 +37,26 @@ def build_data(preprocessed_data: dict, instruction: dict):
         if not content and not metadata.get("error"):
             continue
 
-        # 🔥 EVERYTHING IS TEXT NOW (including image/audio)
+        # =========================
+        # 🔥 FILE PRIORITY (FIX)
+        # =========================
+        if source == "file":
+            data_items.append({
+                "type": "text",
+                "content": content,
+                "metadata": metadata
+            })
+            continue
+
+        # =========================
+        # 🔥 REMOVE COMMAND DUPLICATION
+        # =========================
+        if source == "text" and instruction.get("type") == "instruction_only":
+            continue
+
+        # =========================
+        # DEFAULT (ALL → TEXT)
+        # =========================
         data_items.append({
             "type": "text",
             "content": content,

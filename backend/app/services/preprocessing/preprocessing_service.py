@@ -37,26 +37,28 @@ def run_preprocessing(input_data: dict):
                 errors.append({"audio": str(e)})
 
     # =========================
-    # FILE
+    # FILE (🔥 FIXED STRUCTURE)
     # =========================
     if data.get("file"):
         try:
             file_results = process_files(data["file"])
+
             if isinstance(file_results, list):
                 processed["data"].extend(file_results)
             else:
                 processed["data"].append(file_results)
+
         except Exception as e:
             errors.append({"file": str(e)})
 
     # =========================
-    # IMAGE (🔥 FIXED)
+    # IMAGE
     # =========================
     if data.get("image"):
         for img in data["image"]:
             try:
                 result = process_image(img)
-                processed["data"].append(result)   # already TEXT
+                processed["data"].append(result)
             except Exception as e:
                 errors.append({"image": str(e)})
 

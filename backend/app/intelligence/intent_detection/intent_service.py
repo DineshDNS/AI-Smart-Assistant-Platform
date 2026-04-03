@@ -10,56 +10,64 @@ class IntentService:
         return (text or "").lower().strip()
 
     # =========================
-    # 🔥 GREETING DETECTION
+    # GREETING
     # =========================
     def is_greeting(self, text: str) -> bool:
         greetings = ["hi", "hello", "hey", "how are you", "what's up"]
         return any(g in text for g in greetings)
 
     # =========================
-    # 🔥 MAIN INTENT
+    # FILE DETECTION
+    # =========================
+    def has_file(self, data: list) -> bool:
+        return any(
+            d.get("metadata", {}).get("source") == "file"
+            for d in data
+        )
+
+    # =========================
+    # MAIN INTENT
     # =========================
     def detect_intent(self, payload: dict):
 
         instruction = payload.get("instruction", {})
         instruction_text = instruction.get("raw", "")
-
         data = payload.get("data", [])
 
         instruction_text = self.normalize_text(instruction_text)
 
-        # =========================
-        # 🔥 IMAGE ONLY → DESCRIBE
-        # =========================
-        has_image = any(
-            d.get("metadata", {}).get("source") == "image"
-            for d in data
-        )
-
-        if not instruction_text and has_image:
-            actions = ["describe"]
+        has_file = self.has_file(data)
 
         # =========================
         # 🔥 GREETING
         # =========================
-        elif self.is_greeting(instruction_text):
-            actions = ["conversation"]
+        if self.is_greeting(instruction_text):
+            action = "conversation"
+
+        # =========================
+        # 🔥 FILE + SUMMARIZE (CRITICAL FIX)
+        # =========================
+        elif has_file and "summarize" in instruction_text:
+            action = "summarize"
 
         # =========================
         # 🔥 QUESTION
         # =========================
         elif instruction_text.startswith(("what", "why", "how")):
-            actions = ["explain"]
+            action = "explain"
 
         # =========================
-        # 🔥 ACTION EXTRACTION
+        # 🔥 EXTRACT ACTION
         # =========================
         else:
             actions = self.extractor.extract_actions(instruction_text)
 
-            # 🔥 FIX: fallback → conversation (NOT explain)
+            # 🔥 FIXED FALLBACK
             if not actions:
-                actions = ["conversation"]
+                action = "explain"   # ✅ NOT conversation
+            else:
+                action = actions[0]
+
 
         # =========================
         # FINAL OUTPUT
@@ -67,14 +75,14 @@ class IntentService:
         return {
             **payload,
             "intent": {
-                "type": "conversation" if actions[0] == "conversation" else "task",
+                "type": "conversation" if action == "conversation" else "task",
                 "complexity": "single",
                 "confidence": 0.95,
                 "source": "rule"
             },
-            "actions": [{"name": actions[0]}],
+            "actions": [{"name": action}],
             "instruction": {
-                "text": [actions[0]],
+                "text": [action],
                 "raw": instruction_text,
                 "source": instruction.get("source")
             }

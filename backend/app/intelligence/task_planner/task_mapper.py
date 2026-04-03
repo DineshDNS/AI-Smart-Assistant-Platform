@@ -82,6 +82,25 @@ class TaskMapper:
         return "text"
 
     # =========================
+    # 🔥 NEW: INPUT TYPE DETECTOR
+    # =========================
+    def detect_input_type(self, data: list):
+
+        for item in data:
+            source = item.get("metadata", {}).get("source")
+
+            if source == "file":
+                return "text"   # 🔥 unified system
+
+            if source == "image":
+                return "text"   # already converted
+
+            if source == "audio":
+                return "text"   # already transcribed
+
+        return "text"
+
+    # =========================
     # 🔥 MAIN MAPPER (FINAL)
     # =========================
     def map_tasks(self, actions, data, instruction, memory=None, completed_steps=None):
@@ -93,7 +112,9 @@ class TaskMapper:
         output_type = self.detect_output_type(instruction)
 
         action_to_task = {}
-        input_type = data[0]["type"] if data else "text"
+
+        # 🔥 FIXED INPUT TYPE DETECTION
+        input_type = self.detect_input_type(data)
 
         is_context = self.is_contextual_request(instruction)
         is_derived = self.is_derived_context(instruction)
@@ -174,7 +195,7 @@ class TaskMapper:
                 continue
 
             # =========================
-            # 🟡 DEFAULT
+            # 🟡 DEFAULT TASK
             # =========================
             tasks.append({
                 "task_id": f"task_{task_id}",

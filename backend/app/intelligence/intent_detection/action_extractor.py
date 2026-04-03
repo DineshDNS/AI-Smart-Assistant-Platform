@@ -1,4 +1,3 @@
-
 from app.intelligence.intent_detection.constants import ACTION_GROUPS, PHRASE_MAP
 from app.intelligence.intent_detection.utils import normalize_text
 import difflib
@@ -13,8 +12,22 @@ class ActionExtractor:
 
         for action, keywords in ACTION_GROUPS.items():
             for kw in keywords:
+                kw = kw.lower()
                 self.keyword_to_action[kw] = action
                 self.all_keywords.append(kw)
+
+        # 🔥 HIGH PRIORITY DIRECT WORDS (CRITICAL FIX)
+        self.priority_map = {
+            "summarize": "summarize",
+            "summary": "summarize",
+            "explain": "explain",
+            "analysis": "analyze",
+            "analyze": "analyze",
+            "describe": "describe",
+            "detect": "detect",
+            "convert": "convert",
+            "translate": "translate",
+        }
 
     # =========================
     # 🔥 FUZZY MATCH
@@ -26,16 +39,59 @@ class ActionExtractor:
         return matches[0] if matches else None
 
     # =========================
-    # 🔥 MAIN EXTRACTION (ORDER SAFE)
+    # 🔥 DIRECT PRIORITY MATCH (NEW)
+    # =========================
+    def priority_match(self, text: str):
+        for key, action in self.priority_map.items():
+            if key in text:
+                return [action]
+        return []
+
+    # =========================
+    # 🔥 FILE-AWARE BOOST (NEW)
+    # =========================
+    def file_context_boost(self, text: str):
+        """
+        Detect implicit file-based actions
+        """
+        if "file" in text or "document" in text or "pdf" in text:
+
+            if "summarize" in text or "summary" in text:
+                return ["summarize"]
+
+            if "explain" in text or text.startswith(("what", "why", "how")):
+                return ["explain"]
+
+            if "analyze" in text:
+                return ["analyze"]
+
+        return []
+
+    # =========================
+    # 🔥 MAIN EXTRACTION (FINAL)
     # =========================
     def extract_actions(self, text: str) -> list:
-        text = normalize_text(text or "")
 
+        text = normalize_text(text or "")
         actions = []
         seen = set()
 
         # =========================
-        # 1. PHRASE MATCH (ORDER BASED)
+        # 0. 🔥 FILE CONTEXT BOOST (FIRST PRIORITY)
+        # =========================
+        boosted = self.file_context_boost(text)
+        if boosted:
+            return boosted
+
+        # =========================
+        # 1. 🔥 PRIORITY DIRECT MATCH
+        # =========================
+        priority = self.priority_match(text)
+        if priority:
+            return priority
+
+        # =========================
+        # 2. PHRASE MATCH
         # =========================
         for phrase, action in PHRASE_MAP.items():
             if phrase in text and action not in seen:
@@ -43,13 +99,13 @@ class ActionExtractor:
                 seen.add(action)
 
         # =========================
-        # 2. WORD-LEVEL MATCH (ORDER PRESERVED)
+        # 3. WORD-LEVEL MATCH
         # =========================
         words = text.split()
 
         for word in words:
 
-            # 🔹 Exact match
+            # Exact match
             if word in self.keyword_to_action:
                 action = self.keyword_to_action[word]
 
@@ -58,7 +114,7 @@ class ActionExtractor:
                     seen.add(action)
                 continue
 
-            # 🔹 Fuzzy match (typo handling)
+            # Fuzzy match
             matched = self.fuzzy_match(word)
 
             if matched:
@@ -69,4 +125,3 @@ class ActionExtractor:
                     seen.add(action)
 
         return actions
-
